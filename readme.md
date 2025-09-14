@@ -1,6 +1,6 @@
-# 📬 Messaging API
+# 📬 Moglin
 
-Une API REST en **Node.js / TypeScript** qui permet d’envoyer des emails via **SMTP**.  
+API REST en **Node.js / TypeScript** qui permet d’envoyer des emails via **SMTP**.  
 
 ---
 
@@ -8,8 +8,8 @@ Une API REST en **Node.js / TypeScript** qui permet d’envoyer des emails via *
 
 ```bash
 # Cloner le repo
-git clone https://github.com/ton-org/messaging-api.git
-cd messaging-api
+git clone https://github.com/ton-org/moglin.git
+cd moglin
 
 # Installer les dépendances
 npm install

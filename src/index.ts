@@ -39,7 +39,7 @@ const app = express();
 app.use(express.json());
 
 // Health
-app.get("/api", (_req, res) => { res.send("Welcome to the messaging API."); });
+app.get("/api", (_req, res) => { res.send("Welcome to Moglin."); });
 
 // Protect endpoint with API key
 app.use(
