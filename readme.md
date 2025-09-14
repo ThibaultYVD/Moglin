@@ -8,8 +8,8 @@ API REST en **Node.js / TypeScript** qui permet d’envoyer des emails via **SMT
 
 ```bash
 # Cloner le repo
-git clone https://github.com/ton-org/moglin.git
-cd moglin
+git clone https://github.com/ThibaultYVD/Moglin.git
+cd Moglin
 
 # Installer les dépendances
 npm install
