@@ -1,11 +1,19 @@
 {
-  "name": "messaging",
+  "name": "moglin",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "db:migrate": "prisma migrate dev --schema=src/Infrastructure/Database/prisma/schema.prisma",
+    "db:generate": "prisma generate --schema=src/Infrastructure/Database/prisma/schema.prisma",
+    "db:seed": "tsx src/Infrastructure/Database/prisma/seed.ts",
+    "db:studio": "prisma studio --schema=src/Infrastructure/Database/prisma/schema.prisma",
+    "db:reset": "prisma migrate reset --schema=src/Infrastructure/Database/prisma/schema.prisma"
+  },
+  "prisma": {
+    "seed": "tsx src/Infrastructure/Database/prisma/seed.ts"
   },
   "keywords": [],
   "author": "",
@@ -13,6 +21,7 @@
   "type": "module",
   "description": "",
   "dependencies": {
+    "@prisma/client": "^6.16.1",
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
     "nodemailer": "^7.0.6"
@@ -21,6 +30,7 @@
     "@types/express": "^5.0.3",
     "@types/node": "^24.3.1",
     "@types/nodemailer": "^7.0.1",
+    "prisma": "^6.16.1",
     "ts-node": "^10.9.2",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2"

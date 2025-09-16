@@ -1,0 +1,329 @@
+// schema.prisma
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider     = "postgresql"
+  url          = env("DATABASE_URL")
+  relationMode = "foreignKeys"
+}
+
+/* ===== Enums ===== */
+
+enum RecipientType {
+  TO
+  CC
+  BCC
+}
+
+enum RecipientStatus {
+  QUEUED
+  SENDING
+  SENT
+  DELIVERED
+  FAILED
+  BOUNCED
+  DEFERRED
+}
+
+enum EventKind {
+  DELIVERED
+  OPENED
+  CLICKED
+  BOUNCED
+  COMPLAINT
+  DEFERRED
+}
+
+enum ApiKeyStatus {
+  ACTIVE
+  REVOKED
+  SUSPENDED
+}
+
+enum TemplateStatus {
+  ACTIVE
+  INACTIVE
+  DRAFT
+}
+
+enum WebhookStatus {
+  ACTIVE
+  INACTIVE
+  FAILED
+}
+
+enum AuditAction {
+  EMAIL_SENT
+  EMAIL_FAILED
+  API_KEY_CREATED
+  API_KEY_REVOKED
+  TEMPLATE_CREATED
+  TEMPLATE_UPDATED
+  WEBHOOK_CREATED
+  WEBHOOK_UPDATED
+  RATE_LIMIT_EXCEEDED
+}
+
+/* ===== Modèles ===== */
+
+model Message {
+  id             String   @id @default(uuid())
+  idempotencyKey String?  @unique
+  fromEmail      String
+  fromName       String?
+  subject        String
+  bodyText       String?
+  bodyHtml       String?
+
+  templateId     String?
+  templateVars   Json?
+  priority       Int      @default(0)
+  
+  // Métadonnées
+  apiKeyId       String?
+  clientIp       String?
+  userAgent      String?
+  tags           String[] // Pour catégoriser les emails
+  
+  // Statut global du message
+  status         String   @default("QUEUED") // QUEUED, SENDING, SENT, FAILED
+  
+  // Timestamps
+  createdAt      DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(6)
+  sentAt         DateTime? @db.Timestamptz(6)
+
+  // Relations
+  recipients     MessageRecipient[]
+  attachments    Attachment[]
+  events         MessageEvent[]
+  apiKey         ApiKey? @relation(fields: [apiKeyId], references: [id])
+  template       EmailTemplate? @relation(fields: [templateId], references: [id])
+
+  @@index([createdAt])
+  @@index([apiKeyId])
+  @@index([status])
+  @@index([fromEmail])
+}
+
+model MessageRecipient {
+  id                 String          @id @default(uuid())
+  messageId          String
+  type               RecipientType
+  email              String
+  status             RecipientStatus @default(QUEUED)
+  lastError          String?
+  providerMessageId  String?
+
+  createdAt          DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime @updatedAt     @db.Timestamptz(6)
+
+  message            Message @relation(fields: [messageId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  attempts           DeliveryAttempt[]
+  events             MessageEvent[]
+
+  @@index([messageId])
+  @@index([email])
+  @@index([status])
+  @@unique([messageId, type, email]) // évite les doublons pour un même message
+}
+
+model DeliveryAttempt {
+  id              BigInt   @id @default(autoincrement())
+  recipientId     String
+  startedAt       DateTime @default(now()) @db.Timestamptz(6)
+  durationMs      Int?
+  success         Boolean
+  responseCode    Int?
+  responseMessage String?
+
+  recipient       MessageRecipient @relation(fields: [recipientId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([recipientId])
+  @@index([startedAt])
+}
+
+model Attachment {
+  id          String   @id @default(uuid())
+  messageId   String
+  filename    String
+  contentType String
+  sizeBytes   Int
+  storageKey  String // ex: s3://bucket/key ou chemin MinIO
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+
+  message     Message @relation(fields: [messageId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([messageId])
+}
+
+model MessageEvent {
+  id           BigInt   @id @default(autoincrement())
+  messageId    String
+  recipientId  String?
+  kind         EventKind
+  payload      Json?
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+
+  message      Message           @relation(fields: [messageId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  recipient    MessageRecipient? @relation(fields: [recipientId], references: [id], onDelete: SetNull)
+
+  @@index([messageId])
+  @@index([recipientId])
+  @@index([createdAt])
+}
+
+/* ===== Modèles de gestion des API Keys ===== */
+
+model ApiKey {
+  id          String        @id @default(uuid())
+  name        String        // Nom descriptif de la clé
+  keyHash     String        @unique // Hash de la clé API
+  salt        String        // Salt pour le hash
+  scopes      String[]      // Permissions (ex: ["email:send", "email:read"])
+  status      ApiKeyStatus  @default(ACTIVE)
+  
+  // Limites de débit
+  rateLimit   Int?          // Limite par minute (null = pas de limite)
+  
+  // Métadonnées
+  description String?
+  lastUsedAt  DateTime?     @db.Timestamptz(6)
+  expiresAt   DateTime?     @db.Timestamptz(6)
+  
+  // Timestamps
+  createdAt   DateTime      @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime      @updatedAt @db.Timestamptz(6)
+  revokedAt   DateTime?     @db.Timestamptz(6)
+  
+  // Relations
+  messages    Message[]
+  rateLimits  RateLimit[]
+  auditLogs   AuditLog[]
+
+  @@index([keyHash])
+  @@index([status])
+  @@index([createdAt])
+}
+
+/* ===== Modèles de templates ===== */
+
+model EmailTemplate {
+  id          String         @id @default(uuid())
+  name        String         @unique
+  subject     String
+  bodyText    String?
+  bodyHtml    String?
+  status      TemplateStatus @default(DRAFT)
+  
+  // Variables disponibles dans le template
+  variables   String[]       // Liste des variables attendues
+  
+  // Métadonnées
+  description String?
+  category    String?
+  
+  // Timestamps
+  createdAt   DateTime       @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime       @updatedAt @db.Timestamptz(6)
+  
+  // Relations
+  messages    Message[]
+
+  @@index([name])
+  @@index([status])
+  @@index([category])
+}
+
+/* ===== Modèles de limitation de débit ===== */
+
+model RateLimit {
+  id          String   @id @default(uuid())
+  apiKeyId    String
+  windowStart DateTime @db.Timestamptz(6) // Début de la fenêtre de temps
+  requestCount Int     @default(0)        // Nombre de requêtes dans cette fenêtre
+  windowSize  Int      @default(60)       // Taille de la fenêtre en secondes
+  
+  // Relations
+  apiKey      ApiKey   @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+
+  @@unique([apiKeyId, windowStart])
+  @@index([apiKeyId])
+  @@index([windowStart])
+}
+
+/* ===== Modèles de webhooks ===== */
+
+model Webhook {
+  id          String        @id @default(uuid())
+  name        String
+  url         String
+  events      EventKind[]   // Types d'événements à écouter
+  status      WebhookStatus @default(ACTIVE)
+  
+  // Configuration
+  secret      String?       // Secret pour signer les payloads
+  timeout     Int           @default(30) // Timeout en secondes
+  retryCount  Int           @default(3)  // Nombre de tentatives
+  
+  // Métadonnées
+  description String?
+  
+  // Timestamps
+  createdAt   DateTime      @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime      @updatedAt @db.Timestamptz(6)
+  
+  // Relations
+  deliveries  WebhookDelivery[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model WebhookDelivery {
+  id          String   @id @default(uuid())
+  webhookId   String
+  eventId     String   // ID de l'événement qui a déclenché le webhook
+  payload     Json     // Payload envoyé
+  status      String   // PENDING, SUCCESS, FAILED
+  responseCode Int?
+  responseBody String?
+  
+  // Timestamps
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  deliveredAt DateTime? @db.Timestamptz(6)
+  
+  // Relations
+  webhook     Webhook  @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([webhookId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+/* ===== Modèles d'audit ===== */
+
+model AuditLog {
+  id          String      @id @default(uuid())
+  apiKeyId    String?
+  action      AuditAction
+  resourceId  String?     // ID de la ressource concernée
+  details     Json?       // Détails supplémentaires
+  
+  // Métadonnées
+  ipAddress   String?
+  userAgent   String?
+  
+  // Timestamps
+  createdAt   DateTime    @default(now()) @db.Timestamptz(6)
+  
+  // Relations
+  apiKey      ApiKey?     @relation(fields: [apiKeyId], references: [id])
+
+  @@index([apiKeyId])
+  @@index([action])
+  @@index([createdAt])
+}
