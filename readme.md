@@ -13,7 +13,7 @@ Une API complète d'envoi de mail avec authentification par clés API, templates
 
 1. **Cloner le projet**
 ```bash
-git clone <repository-url>
+git clone https://github.com/ThibaultYVD/Moglin.git
 cd Moglin
 ```
 
